@@ -2,17 +2,7 @@
 
 FisLab project, created around 7/10/2013
 
-Developers:
-
-     Prof. Ms. Rudson R. Alves
-
-     Prof. Ms. Tiago P. Bertelli
-
-     Luiz Pasquale Filho
-
-Contribution:
-
-     André Barreto Silveira
+Developer: Prof. Ms. Rudson R. Alves
 
 This project aims to develop tools to help with Experimental Physics classes (Basic Cycle). 
 To this end, at first, the project will develop a set of programs specialized in performing 
