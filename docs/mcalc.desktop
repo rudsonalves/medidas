@@ -1,0 +1,11 @@
+[Desktop Entry]
+Encoding=UTF-8
+Categories=Education;Math;
+Exec=mcalc
+Icon=/usr/lib/measures/images/calculator.png
+StartupNotify=true
+Terminal=false
+Type=Application
+Name=MCalc
+GenericName=MCalc
+Comment=

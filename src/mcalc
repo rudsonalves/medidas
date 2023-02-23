@@ -1,0 +1,582 @@
+#!/bin/env python
+#
+# Mcalc é uma interface gráfica para o módulo Medidas.py
+#
+# Por Rudson R. Alves
+# 17 de Março de 2010
+#
+# mcalc
+# Copyright (C) 2010  Rudson R. Alves (rudsonalves[a]rra.etc.br)
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+from __future__ import division
+
+__version__ = '1.2.1'
+__program_name__ = 'MCalc'
+__project_pkg__ = 'medidas'
+
+verbose = False
+
+from PyQt4.QtCore import *
+from PyQt4.QtGui import *
+
+import sys, os, ConfigParser
+from optparse import OptionParser, Values
+from ctypes import cdll, byref, create_string_buffer
+
+# Append program lib path
+##>
+sys.path.append('../forms')
+sys.path.append('../libs')
+##<
+#sys.path.append('/usr/lib/%s' % __project_pkg__)
+
+# import libs
+from Ui_calc import *
+from Ui_altitude_dialog import *
+from medidas import *
+
+latitude = -20.35640
+altitude = 0
+homedir = os.path.expanduser('~')
+conffile = '%s%s.mcalc' % (homedir, os.sep)
+
+
+# define command parameters
+def set_parameters():
+    parser = OptionParser(usage = 'Use: %prog [options] args', \
+                                    version = '%%prog %s' % __version__)
+
+    # Actions
+    parser.add_option('-V', '--verbose', action='store_const', dest='verbose', \
+                      default=False, const=True, help='enable verbose mode')
+
+    conf, args = parser.parse_args()
+
+    # Store values
+    options = conf.__dict__.copy()
+
+    return options, args
+
+
+# Set a new proc name to application
+def set_procname(newname):
+    """ set_procname(newname): set a new proc name to application """
+    libc = cdll.LoadLibrary('libc.so.6')
+    buff = create_string_buffer(len(newname)+1)
+    buff.value = newname
+    libc.prctl(15, byref(buff), 0, 0, 0)
+
+
+#------------------------------------------------------
+#                Define MainWindow class
+#------------------------------------------------------
+class MainWindow(QMainWindow, Ui_MainWindow):
+    def __init__(self, parent = None):
+        super(MainWindow, self).__init__(parent)
+        self.setupUi(self)
+
+        self.latitude = latitude
+        self.altitude = altitude
+
+        self.history_listWidget.clear()
+
+        # Start defaults variables
+        self.a = self.b = self.c = self.d = self.e = self.f = 0.
+
+        # last answer
+        self.ans = 0.
+
+        # editing status
+        self.editing = False
+
+        # max number of lines and line index
+        self.max_lines = 100000
+        self.line_index = -1
+
+        # clear display
+        self.display_lineEdit.setText('')
+
+        # set window title
+        self.setWindowTitle('%s - %s' % (__program_name__, __version__))
+
+        # change focus
+        self.display_lineEdit.setFocus()
+
+
+    # Rad and Deg line
+    @pyqtSignature('bool')
+    def on_rad_radioButton_toggled(self, status):
+        if status:
+            set_angle_unit('rad')
+
+    @pyqtSignature('bool')
+    def on_deg_radioButton_toggled(self, status):
+        if status:
+            set_angle_unit('deg')
+
+
+    # button left, up, down, and right
+    @pyqtSignature('')
+    def on_up_pushButton_clicked(self):
+        max_index = self.history_listWidget.count() - 1
+        self.line_index -= 1
+        if self.line_index < 0:
+            self.line_index = 0
+
+        item = self.history_listWidget.item(self.line_index)
+        try:
+            line = item.text()
+            self.history_listWidget.scrollToItem(item)
+            self.history_listWidget.setItemSelected(item, True)
+            self.display_lineEdit.setText(line)
+            self.editing = True
+        except:
+            pass
+        self.display_lineEdit.setFocus()
+
+
+    @pyqtSignature('')
+    def on_down_pushButton_clicked(self):
+        max_index = self.history_listWidget.count() - 1
+        self.line_index += 1
+        if self.line_index > max_index:
+            self.line_index = max_index
+
+        item = self.history_listWidget.item(self.line_index)
+        try:
+            line = item.text()
+            self.history_listWidget.scrollToItem(item)
+            self.history_listWidget.setItemSelected(item, True)
+            self.display_lineEdit.setText(line)
+            self.editing = True
+        except:
+            pass
+        self.display_lineEdit.setFocus()
+
+
+    @pyqtSignature('QListWidgetItem *')
+    def on_history_listWidget_itemClicked(self, item):
+        line = item.text()
+        self.line_index = self.history_listWidget.row(item)
+        self.display_lineEdit.setText(line)
+        self.editing = True
+        self.display_lineEdit.setFocus()
+
+
+    @pyqtSignature('')
+    def on_left_pushButton_clicked(self):
+        self.display_lineEdit.cursorBackward(False, 1)
+
+
+    @pyqtSignature('')
+    def on_right_pushButton_clicked(self):
+        self.display_lineEdit.cursorForward(False, 1)
+
+
+    # display_lineEdit edit end signal
+    @pyqtSignature('')
+    def on_display_lineEdit_returnPressed(self):
+        self.on_eq_pushButton_clicked()
+
+
+    @pyqtSignature('QString')
+    def on_display_lineEdit_textEdited(self, string):
+        self.editing = True
+
+
+    # menu line
+    @pyqtSignature('bool')
+    def on_action_Latitude_Altitude_triggered(self, status):
+        if verbose: print 'latitude: %f  altitude: %f' % (self.latitude, self.altitude)
+        dl = altitude_Dialog(self.latitude, self.altitude)
+        dl.latitude_doubleSpinBox.setValue(self.latitude)
+        dl.altitude_doubleSpinBox.setValue(self.altitude)
+
+        if dl.exec_():
+            self.altitude = dl.altitude_doubleSpinBox.value()
+            self.latitude = dl.latitude_doubleSpinBox.value()
+
+            global g
+            g = medida(float(dl.g_label.text()), 1e-3)
+            write_config_file(conffile)
+
+
+    @pyqtSignature('bool')
+    def on_action_About_triggered(self, status):
+        msg = QMessageBox.information(self, 'Calculadora Medidas', \
+        '%s - versão %s\n\n' % (__program_name__, __version__) + \
+        'Este aplicativo é uma interface gráfica para o módulo\n' + \
+        'medidas.py. Este módulo é uma coletânea de regras para\n' + \
+        'fazer operações matemáticas com um modelo simples de\n' + \
+        'tratamento de incertezas.\n' + \
+        'As regras matemáticas usadas neste modelo são apresentadas\n' + \
+        'no documento: http://rra.etc.br/uvv/Exp-1/Medidas.pdf\n\n'
+        'Este projeto é distribuído sobre a Licença GPL2\n\n' + \
+        'Por Rudson R. Alves\nhttp://rra.etc.br',  \
+        QMessageBox.Close)
+
+
+    # sto_pushButton
+    @pyqtSignature('QAbstractButton *')
+    def on_memory_buttonGroup_buttonClicked(self, button):
+        mem = str(button.text())
+        ans = self.process_memory(mem)
+        if verbose: print 'Memory: %s' % str(button.text())
+
+
+    # constants line
+    @pyqtSignature('QAbstractButton *')
+    def on_const_buttonGroup_buttonClicked(self, button):
+        const = str(button.text()).replace('_','')
+        if const == 'e':
+            const = 'ce'
+        self.insert_string(const)
+
+
+    # inv_pushButton
+    @pyqtSignature('bool')
+    def on_inv_pushButton_toggled(self, press):
+        if press:
+            self.log_pushButton.setText('10^')
+            self.ln_pushButton.setText('e^')
+            if self.hyp_pushButton.isChecked():
+                self.sin_pushButton.setText('asinh')
+                self.cos_pushButton.setText('acosh')
+                self.tan_pushButton.setText('atanh')
+            else:
+                self.sin_pushButton.setText('asin')
+                self.cos_pushButton.setText('acos')
+                self.tan_pushButton.setText('atan')
+        else:
+            self.log_pushButton.setText('log')
+            self.ln_pushButton.setText('ln')
+            if self.hyp_pushButton.isChecked():
+                self.sin_pushButton.setText('sinh')
+                self.cos_pushButton.setText('cosh')
+                self.tan_pushButton.setText('tanh')
+            else:
+                self.sin_pushButton.setText('sin')
+                self.cos_pushButton.setText('cos')
+                self.tan_pushButton.setText('tan')
+
+
+    # hyp_pushButton
+    @pyqtSignature('bool')
+    def on_hyp_pushButton_toggled(self, press):
+        if press:
+            if self.inv_pushButton.isChecked():
+                self.sin_pushButton.setText('asinh')
+                self.cos_pushButton.setText('acosh')
+                self.tan_pushButton.setText('atanh')
+            else:
+                self.sin_pushButton.setText('sinh')
+                self.cos_pushButton.setText('cosh')
+                self.tan_pushButton.setText('tanh')
+        else:
+            if self.inv_pushButton.isChecked():
+                self.sin_pushButton.setText('asin')
+                self.cos_pushButton.setText('acos')
+                self.tan_pushButton.setText('atan')
+            else:
+                self.sin_pushButton.setText('sin')
+                self.cos_pushButton.setText('cos')
+                self.tan_pushButton.setText('tan')
+
+
+    # eng_pushButton
+    @pyqtSignature('')
+    def on_lrpar_pushButton_clicked(self):
+        self.insert_string('()', 1)
+
+
+    @pyqtSignature('')
+    def on_rpar_pushButton_clicked(self):
+        self.insert_string(')')
+
+
+    # functions buttons
+    @pyqtSignature('QAbstractButton *')
+    def on_functions_buttonGroup_buttonClicked(self, button):
+        self.insert_string(str(button.text()).lower())
+        self.inv_pushButton.setChecked(False)
+
+
+    @pyqtSignature('')
+    def on_del_pushButton_clicked(self):
+        self.display_lineEdit.backspace()
+        if len(self.display_lineEdit.text()) == 0:
+            self.editing = False
+
+
+    @pyqtSignature('')
+    def on_ac_pushButton_clicked(self):
+        self.display_lineEdit.clear()
+        self.editing = False
+
+
+    # operators (+,-,*,/)
+    @pyqtSignature('QAbstractButton *')
+    def on_operators_buttonGroup_buttonClicked(self, button):
+        line = str(self.display_lineEdit.text())
+        pos = self.display_lineEdit.cursorPosition()
+        if line[pos-1:pos] not in ('+-x/'):
+            self.insert_string(str(button.text()))
+
+
+    @pyqtSignature('')
+    def on_vir_pushButton_clicked(self):
+        self.insert_string(',')
+
+
+    @pyqtSignature('')
+    def on_exp_pushButton_clicked(self):
+        self.insert_string('EXP')
+
+
+    @pyqtSignature('')
+    def on_ans_pushButton_clicked(self):
+        self.insert_string('Ans')
+
+
+    @pyqtSignature('')
+    def on_eq_pushButton_clicked(self):
+        if self.editing:
+            line = str(self.display_lineEdit.text())
+            self.save_new_line(line)
+            self.process_line(line)
+            self.display_lineEdit.setText(str(self.ans))
+            if self.ans == 'Syntax Error':
+                self.display_lineEdit.selectAll()
+            self.editing = False
+        else:
+            self.display_lineEdit.setText('')
+        self.display_lineEdit.setFocus()
+
+
+    # Numbers lines
+    @pyqtSignature('QAbstractButton *')
+    def on_numbers_buttonGroup_buttonClicked(self, button):
+        num = str(button.text())
+        if verbose: print 'Button "%s" is pressed' % num
+        self.insert_string(num)
+
+
+    # Others functions
+    def insert_string(self, string, back = 0):
+        # trabalha a string a ser inserida, adiconando backspace, parêntese,
+        # vírgula, ... quando necessário
+        if string in ('log','ln','sin','cos','tan','asin','acos','atan',\
+                        'sinh','cosh','tanh','asinh','acosh','atanh', \
+                        'sqrt','trunc'):
+            string += '()'
+            back = 1
+
+        elif string in ('medida','media'):
+            string += '(,)'
+            back = 2
+
+        elif string == '|x|':
+            string = 'abs()'
+            back = 1
+
+        elif string == '1/x':
+            string = '1/'
+
+        # insere a string
+        if self.editing:
+            self.display_lineEdit.insert(string)
+
+            # verifica a ocorrência de duas vírgumas consecutivas e as remove,
+            # avançando o cursor para após a vírgula.
+            line = self.display_lineEdit.text()
+            # remove espaços em branco
+            line = line.replace(' ', '')
+            # encontra a ocorrência de duas vírgula consecutivas
+            pos = line.indexOf(',,')
+            if pos != -1:
+                # ocorrência encontrada, remove as vírgulas
+                line = line.replace(',,', ',')
+                # substitui o texto em edição e reposiciona o cursor
+                self.display_lineEdit.setText(line)
+                self.display_lineEdit.setCursorPosition(pos+1)
+
+            if back > 0:
+                self.display_lineEdit.cursorBackward(False, back)
+        else:
+            if string in ('*', '/', '+', '-', '^2', '^3', '^'):
+                self.display_lineEdit.setText('Ans%s' % string)
+            else:
+                self.display_lineEdit.setText(string)
+                if back > 0:
+                    self.display_lineEdit.cursorBackward(False, back)
+        self.editing = True
+        if verbose: print 'Insert: "%s"    Editing: %s' % (string, str(self.editing))
+
+
+    def process_memory(self, mem):
+        if self.sto_pushButton.isChecked():
+            # desable sto_pushButton
+            self.sto_pushButton.setChecked(False)
+            # get line
+            line = str(self.display_lineEdit.text())
+            # save to memory
+            line = '%s->%s' % (line, mem)
+            # process lines
+            self.process_line(line)
+            # save new line
+            self.save_new_line(line)
+            # display answer
+            self.display_lineEdit.setText(str(self.ans))
+            # disable edit flag
+            self.editing = False
+            if verbose: print 'Store memory...'
+            # return answer
+            return self.ans
+        else:
+            self.insert_string(mem)
+            if verbose: print 'STO pressed...'
+            self.ans = None
+            return None
+
+
+    def save_new_line(self, line):
+        # remove frist line if buffer is full
+        if self.history_listWidget.count() > self.max_lines:
+            item = self.history_listWidget.item(0)
+            self.history_listWidget.removeItemWidget(item)
+            if verbose: print 'Remove frist line: %s' % item.text()
+
+        # save new line
+        item = QListWidgetItem(line)
+        item.setTextAlignment(Qt.AlignRight)
+        self.history_listWidget.addItem(item)
+        self.line_index = self.history_listWidget.count()
+        self.history_listWidget.scrollToItem(item)
+        if verbose: print 'Line saved: %s' % item.text()
+
+
+    def process_line(self, line):
+        mem = None
+        pline = str(line).replace('^', '**')
+        pline = pline.replace('x', '*')
+        pline = pline.replace('Ans', 'self.ans')
+        pline = pline.replace('A', 'self.a')
+        pline = pline.replace('B', 'self.b')
+        pline = pline.replace('C', 'self.c')
+        pline = pline.replace('D', 'self.d')
+        pline = pline.replace('E', 'self.e')
+        pline = pline.replace('F', 'self.f')
+        pline = pline.replace('self.eXP', 'E')
+        if '->' in pline:
+            mem = pline[-1]
+            pline = pline[:-8]
+        try:
+            if verbose: print 'Processed line is: "%s"' % pline
+            self.ans = eval(pline)
+            if mem == 'a':
+                self.a = self.ans
+            elif mem == 'b':
+                self.b = self.ans
+            elif mem == 'c':
+                self.c = self.ans
+            elif mem == 'd':
+                self.d = self.ans
+            elif mem == 'e':
+                self.e = self.ans
+            elif mem == 'f':
+                self.f = self.ans
+        except Exception, e:
+            self.ans = 'Syntax Error'
+            if verbose: print 'Syntax Error\n%s' % e
+        if verbose: print 'Line processed: "%s"' % pline
+
+
+
+class altitude_Dialog(QDialog, Ui_altitude_Dialog):
+    def __init__(self, latitude = 0., altitude = 0., parent = None):
+        super(altitude_Dialog, self).__init__(parent)
+        self.setupUi(self)
+        self.latitude_doubleSpinBox.setValue(latitude)
+        self.altitude_doubleSpinBox.setValue(altitude)
+
+
+    @pyqtSignature('QString')
+    def on_wiki_url_label_linkActivated(self, url):
+        QDesktopServices().openUrl(QUrl(url))
+
+
+    @pyqtSignature('QString')
+    def on_gmap_label_linkActivated(self, url):
+        QDesktopServices().openUrl(QUrl(url))
+
+
+    @pyqtSignature('double')
+    def on_latitude_doubleSpinBox_valueChanged(self, latitude):
+        if verbose: print 'latitude_doubleSpinBox: %f' % latitude
+        altitude = self.altitude_doubleSpinBox.value()
+        self.g_label.setText('%.6f' % acc_gravity(latitude, altitude))
+
+
+    @pyqtSignature('double')
+    def on_altitude_doubleSpinBox_valueChanged(self, altitude):
+        if verbose: print 'altitude_doubleSpinBox: %f' % altitude
+        latitude =  self.latitude_doubleSpinBox.value()
+        self.g_label.setText('%.6f' % acc_gravity(latitude, altitude))
+
+
+def read_config_file(conffile = '.mcalc'):
+    config = ConfigParser.RawConfigParser()
+    config.read(conffile)
+
+    global latitude, altitude
+    latitude = config.getfloat('Localizacao', 'latitude')
+    altitude = config.getfloat('Localizacao', 'altitude')
+
+
+def write_config_file(conffile = '.mcalc'):
+    config = ConfigParser.RawConfigParser()
+
+    config.add_section('Localizacao')
+    config.set('Localizacao', 'latitude', str(latitude))
+    config.set('Localizacao', 'altitude', str(altitude))
+
+    with open(conffile, 'wb') as configfile:
+        config.write(configfile)
+
+
+#-----------------------------------------------------
+#                  Start application
+#-----------------------------------------------------
+if __name__ == '__main__':
+    # Set application name
+    set_procname(__program_name__)
+
+    # Load .mcalc in currente directory
+    if os.path.exists(conffile):
+        read_config_file(conffile)
+    else:
+        write_config_file(conffile)
+
+    # Set parameters
+    options, args = set_parameters()
+    verbose = options['verbose']
+
+    app = QApplication(sys.argv)
+    app.setApplicationName('MCalc %s' % __version__)
+    #app.setWindowIcon(QIcon(':/icon.png'))
+    form = MainWindow()
+    form.show()
+    app.exec_()

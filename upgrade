@@ -1,0 +1,98 @@
+#!/bin/bash
+#
+
+SAVE_DIR="../../sources/medidas"
+PROGRAM="medidas"
+
+function help()
+{
+    echo "Use: upgrade [option]"
+    echo "   with:"
+    echo "       -y          to save new package"
+    #echo "       -s          to increase the version of svn modifier files"
+    echo ""
+    exit
+}
+
+function increase_version()
+{
+    if [ "$1" == "Makefile" ]; then
+        VERSION=`sed -e "/^VERSION/! d" -e "s/^VERSION = \(.*\)$/\1/" $1`
+    elif ! grep '^__version__' $1 > /dev/null 2> /dev/null; then
+        echo ""
+        return
+    else
+        VERSION=`sed -e "/^__version__/! d" -e "s/^__version__ = \(.*\)$/\1/" $1 | tr -d "'" | tr -d '"'`
+    fi
+    D1=`echo $VERSION | sed 's/\(.*\)\.\(.*\)\.\(.*\)/\1/'`
+    D2=`echo $VERSION | sed 's/\(.*\)\.\(.*\)\.\(.*\)/\2/'`
+    D3=`echo $VERSION | sed 's/\(.*\)\.\(.*\)\.\(.*\)/\3/'`
+    let D3++
+    if [ $D3 -gt 30 ]; then
+        D3=0
+        let D2++
+    fi
+    echo "$D1.$D2.$D3"
+}
+
+function upgrade_version()
+{
+    # upgrade_version $New_Version $File
+    sed -i "s/^__version__ = .*$/__version__ = '$1'/" $2
+}
+
+function upgrade_Makefile_version()
+{
+    # upgrade_Makefile_version $New_Version
+    sed -i "s/^VERSION = .*$/VERSION = $1/" Makefile
+}
+
+set -e
+
+echo -e "\e[31;1mUse this script as root only...\e[m"
+echo -e "\n\e[34;1mUpgrade Medidas...\e[m\n"
+
+SAVE="$1"
+
+LIST=`svn status | awk '/^M/ {print $2}'`
+if [ "$LIST" != "" ]; then
+    # upgrade Makefile version
+    MKFILE_VERSION=`increase_version Makefile`
+    upgrade_Makefile_version $MKFILE_VERSION
+
+    LIST=`svn status | awk '/^M/ {print $2}'`
+    for FILE in $LIST; do
+        STR_VERSION=`increase_version $FILE`
+        if [ "$FILE" == "Makefile" ]; then
+            echo -e "\e[33;1mSkip Makefile...\e[m"
+        elif [ "$STR_VERSION" != "" ]; then
+            echo -e "\e[32;1mUpgrade $FILE to version $STR_VERSION...\e[m"
+            upgrade_version $STR_VERSION $FILE
+        fi
+    done
+
+    echo -e "\e[34;1mmake package...\e[m"
+    make package;
+    PKG=`ls /tmp/$PROGRAM-*.t?z`
+    if [ "$PKG" == "" ]; then
+        echo "\e[31;1mMake package error...\nAbort!\e[m"
+        exit
+    fi
+    echo -e "\e[34;1mupgradepkg --install-new $PKG\e[m"
+    upgradepkg --install-new /tmp/$PROGRAM-$MKFILE_VERSION*.tgz
+    echo -en "\e[33;1mSave a copy of $PKG (y/N)? \e[m"
+    if [ "$SAVE" == "" ]; then
+        read ANS
+    else
+        ANS=${SAVE//-/}
+        echo $ANS
+    fi
+    if [ "$ANS" == "y" -o "$ANS" == "Y" ]; then
+        echo -e "\e[32;1m$PKG moved to $SAVE_DIR\e[m"
+        mv $PKG $SAVE_DIR/
+    else
+        echo -e "\e[31;1m$PKG removed...\e[m"
+        rm $PKG
+    fi
+    echo -e "\n"
+fi
